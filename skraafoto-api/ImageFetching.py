@@ -12,13 +12,15 @@ load_dotenv()
 DATAFORSYNING_TOKEN = os.getenv('DATAFORSYNING_TOKEN') 
 
 def convert_from_wgs84(easting, northing, crs="EPSG:25832"):
+    """Converts coordinates from WGS84 to a given CRS."""
     transformer = pyproj.Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     lon, lat = transformer.transform(easting, northing)
-
-    print(easting, northing, crs, lon, lat)
     return (lon, lat)
 
 def get_metadata(item, coords):
+    """Calculates the pixel coordinates of a given address in a given image.
+    Returns a tuple with the pixel coordinates."""
+    # calculations mostly from https://docs.dataforsyningen.dk/#download-og-visning-af-billeder
     props = item["properties"]
 
     m11, m12, m13, m21, m22, m23, m31, m32, m33 = props["pers:rotation_matrix"]
@@ -36,7 +38,7 @@ def get_metadata(item, coords):
     y0 = sensor_rows * 0.5 + ppo_y / pixel_size
 
     
-    wgs84_coords = convert_to_wgs84(coords[0], coords[1], "EPSG:"+str(props["pers:crs"]))
+    wgs84_coords = convert_from_wgs84(coords[0], coords[1], "EPSG:"+str(props["pers:crs"]))
     X, Y = wgs84_coords
     Z = 10
 
@@ -49,11 +51,15 @@ def get_metadata(item, coords):
     xa = x0 - f * (m11 * dX + m12 * dY + m13 * dZ) / n
     ya = y0 - f * (m21 * dX + m22 * dY + m23 * dZ) / n
 
+    #convert origo to upper left
     ya_upper_left = sensor_rows - ya
 
     return (xa, ya_upper_left)
 
 def fetch_images(address, token):
+    """Fetches images from the Skraafoto API for a given address.
+    Returns a list of tuples with the image data and the pixel coordinates of the address.
+    """
     bbox = get_bounding_box_for_address(address)
     coords = get_coordinates_for_address(address)
 
@@ -94,10 +100,12 @@ def fetch_images(address, token):
     return images if images else None
     
 def convert_tiff_to_jpg(image):
+    """Converts a tiff image to a jpeg image."""
     jpeg_image = image.convert("RGB")
     return jpeg_image
 
 def save_image(image, path, suffix=""):
+    """Saves an image to a given path with a given suffix."""
     # if path is not set, make the path /output/image_<CURRENT TIME AND DATE>.jpg
     if path == None:
         path = "output/image_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_" + suffix + ".jpg"
@@ -105,22 +113,24 @@ def save_image(image, path, suffix=""):
         path = path + "_" + suffix + ".jpg"
     image.save(path)
 
-def save_metadata(metadata, path, suffix=""):
+def save_metadata(metadata, path):
+    """Saves metadata to a given path."""
     if metadata:
-        with open(path + "_" + suffix + ".txt", "w") as file:
+        with open(path + ".txt", "a") as file:
             file.write(metadata)
 
 def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
+    """Fetches and saves images for a given address."""
     image_tuples = fetch_images(address, token)
     i = 0
     for image, pixel_coords in image_tuples:
         my_image = Image.open(BytesIO(image)) 
 
         jpeg = convert_tiff_to_jpg(my_image)
-        #save_image(jpeg, path, str(i))
+        save_image(jpeg, path, str(i))
 
         metadata = str(i)+","+str(pixel_coords[0])+","+str(pixel_coords[1])
-        #save_metadata(metadata, path, str(i))
+        save_metadata(metadata, path)
         i += 1
 
 # Example usage
