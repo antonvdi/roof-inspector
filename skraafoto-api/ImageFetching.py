@@ -3,7 +3,7 @@ from PIL import Image
 from io import BytesIO
 from datetime import datetime
 from BoundingBoxFetching import get_bounding_box_for_address, get_coordinates_for_address
-from DatafordelerFetching import get_matrikel_from_address
+from DatafordelerFetching import get_height_from_model, get_matrikel_from_address
 import os
 from dotenv import load_dotenv
 import pyproj
@@ -66,9 +66,11 @@ def get_matrikel_geometry_on_image(address, item):
     matrikel_data = get_matrikel_from_address(address)
     coordinates = matrikel_data["features"][0]["geometry"]["coordinates"]
     crs = matrikel_data["features"][0]["geometry"]["crs"]["properties"]["name"]
-
     epsg_25832_coords = [convert_coordinates(coord[0], coord[1], "EPSG:25832", crs) for coord in coordinates[0]]
-    points_on_image = [calculate_point_on_image(item, coord[0], coord[1]) for coord in epsg_25832_coords]
+
+    epsg_25832_coords_with_height = [(coord[0], coord[1], get_height_from_model(coord[0], coord[1])) for coord in epsg_25832_coords]
+
+    points_on_image = [calculate_point_on_image(item, coord[0], coord[1], coord[2]) for coord in epsg_25832_coords_with_height]
 
     return points_on_image
 
@@ -139,16 +141,16 @@ def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
     """Fetches and saves images for a given address."""
     image_tuples = fetch_images(address, token)
     i = 0
+    metadata_str = "image_id,x,y\n"
+    save_metadata(metadata_str, path)
     for image, metadata in image_tuples:
         my_image = Image.open(BytesIO(image)) 
 
         jpeg = convert_tiff_to_jpg(my_image)
         save_image(jpeg, path, str(i))
         
-        # convert a list of lists to a string with the outer list seperated by commas and the inner lists seperated by new lines
-        metadata = "image_id,x,y\n"
-        metadata += "\n".join([str(i)+","+str(coord_pair[0])+","+str(coord_pair[1]) for coord_pair in metadata])+"\n"
-        save_metadata(metadata, path)
+        metadata_str = "\n".join([str(i)+","+str(coord_pair[0])+","+str(coord_pair[1]) for coord_pair in metadata])+"\n"
+        save_metadata(metadata_str, path)
         i += 1
 
 # Example usage
