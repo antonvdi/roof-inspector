@@ -61,25 +61,30 @@ def get_metadata(item, coords):
 
     return calculate_point_on_image(item, X, Y, Z)
 
-def get_matrikel_geometry_on_image(address, item):
+def get_matrikel_geometry_on_image(coords, item):
     """Returns the geometry of the matrikel."""
-    matrikel_data = get_matrikel_from_address(address)
-    coordinates = matrikel_data["features"][0]["geometry"]["coordinates"]
-    crs = matrikel_data["features"][0]["geometry"]["crs"]["properties"]["name"]
-    epsg_25832_coords = [convert_coordinates(coord[0], coord[1], "EPSG:25832", crs) for coord in coordinates[0]]
-
-    epsg_25832_coords_with_height = [(coord[0], coord[1], get_height_from_model(coord[0], coord[1])) for coord in epsg_25832_coords]
-
-    points_on_image = [calculate_point_on_image(item, coord[0], coord[1], coord[2]) for coord in epsg_25832_coords_with_height]
+    
+    points_on_image = [calculate_point_on_image(item, coord[0], coord[1], coord[2]) for coord in coords]
 
     return points_on_image
+
+def get_matrikel_coordinates(matrikel):
+    """Returns the coordinates of the matrikel."""
+    coordinates = matrikel["features"][0]["geometry"]["coordinates"]
+    crs = matrikel["features"][0]["geometry"]["crs"]["properties"]["name"]
+    
+    epsg_25832_coords = [convert_coordinates(coord[0], coord[1], "EPSG:25832", crs) for coord in coordinates[0]]
+    epsg_25832_coords_with_height = [(coord[0], coord[1], get_height_from_model(coord[0], coord[1])) for coord in epsg_25832_coords]
+    
+    return epsg_25832_coords_with_height
 
 def fetch_images(address, token):
     """Fetches images from the Skraafoto API for a given address.
     Returns a list of tuples with the image data and the pixel coordinates of the address.
     """
     bbox = get_bounding_box_for_address(address)
-    #coords = get_coordinates_for_address(address)
+    matrikel_data = get_matrikel_from_address(address)
+    matrikel_coords = get_matrikel_coordinates(matrikel_data)
 
     collections = ["skraafotos2017", "skraafotos2019", "skraafotos2022"]
     directions = ["north", "east", "south", "west"]
@@ -90,7 +95,7 @@ def fetch_images(address, token):
     }
 
     images = []
-    
+
     for collection in collections:
         for direction in directions:
             url = (f"{base_url}{collection}/items?limit=1&bbox={bbox}"
@@ -104,7 +109,10 @@ def fetch_images(address, token):
                 if response_json["features"]:
                     image_url = response_json["features"][0]["assets"]["data"]["href"]
 
-                    metadata = get_matrikel_geometry_on_image(address, response_json["features"][0])
+                    metadata = {
+                        "points": get_matrikel_geometry_on_image(matrikel_coords, response_json["features"][0]),
+                        "pixel_size": response_json["features"][0]["properties"]["pers:interior_orientation"]["pixel_spacing"][0]
+                    }
 
                     image_response = requests.get(image_url, headers=headers)
 
@@ -141,7 +149,8 @@ def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
     """Fetches and saves images for a given address."""
     image_tuples = fetch_images(address, token)
     i = 0
-    metadata_str = "image_id,x,y\n"
+    metadata_str = "image_id,x,y,pixel_size\n"
+    
     save_metadata(metadata_str, path)
     for image, metadata in image_tuples:
         my_image = Image.open(BytesIO(image)) 
@@ -149,7 +158,7 @@ def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
         jpeg = convert_tiff_to_jpg(my_image)
         save_image(jpeg, path, str(i))
         
-        metadata_str = "\n".join([str(i)+","+str(coord_pair[0])+","+str(coord_pair[1]) for coord_pair in metadata])+"\n"
+        metadata_str = "\n".join([str(i)+","+str(metadata_item[0])+","+str(metadata_item[1])+","+str(metadata["pixel_size"]) for metadata_item in metadata["points"]])+"\n"
         save_metadata(metadata_str, path)
         i += 1
 

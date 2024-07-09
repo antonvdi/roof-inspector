@@ -4,3 +4,4 @@ python-dotenv
 folium
 pyproj
 matplotlib
+opencv-python-headless
