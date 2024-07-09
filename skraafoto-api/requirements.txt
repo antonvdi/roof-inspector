@@ -6,3 +6,4 @@ pyproj
 matplotlib
 opencv-python-headless
 xmltodict
+openpyxl

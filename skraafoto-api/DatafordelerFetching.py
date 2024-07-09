@@ -32,7 +32,7 @@ def get_matrikel_from_address(address):
     return data
 
 def get_building_from_address(address):
-    # Get matrikelnr and ejerlavnr
+    # Get bbox
     bbox = get_bounding_box_for_address_wgs84(address)
 
     type = "Bygning"

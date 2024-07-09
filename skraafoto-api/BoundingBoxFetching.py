@@ -1,6 +1,9 @@
 import requests
 from Utils import convert_coordinates
 
+class AddressNotFoundError(Exception):
+    pass
+
 def get_coordinates_for_address(address):
     # Step 1: Geocode the Address
     geocode_url = f"https://api.dataforsyningen.dk/adresser?q={address}"
@@ -8,10 +11,11 @@ def get_coordinates_for_address(address):
     data = response.json()
 
     if not data:
-        return {"error": "Address not found."}
-
+        raise AddressNotFoundError()
+    
     # Extract the coordinates
     coordinates = data[0]['adgangsadresse']['adgangspunkt']['koordinater']
+    
     lon, lat = coordinates[0], coordinates[1]
     return (lon, lat)
 

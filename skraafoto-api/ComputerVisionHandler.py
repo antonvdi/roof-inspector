@@ -55,4 +55,4 @@ def load_data(base_id):
         image_with_polygon.show()
 
 # Example usage
-load_data("output/valdemarsgade43")
+#load_data("output/valdemarsgade43")

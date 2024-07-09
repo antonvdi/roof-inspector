@@ -2,11 +2,13 @@ import requests
 from PIL import Image
 from io import BytesIO
 from datetime import datetime
-from BoundingBoxFetching import get_bounding_box_for_address, get_coordinates_for_address
+from BoundingBoxFetching import AddressNotFoundError, get_bounding_box_for_address, get_coordinates_for_address
 from DatafordelerFetching import get_building_from_address, get_height_from_model, get_matrikel_from_address
 import os
 from dotenv import load_dotenv
 from Utils import convert_coordinates
+from ComputerVisionHandler import draw_polygon
+import pandas as pd
 
 load_dotenv()
 
@@ -91,7 +93,8 @@ def fetch_images(address, token):
     building = get_building_from_address(address)
     matrikel_coords = get_building_coordinates(building)
 
-    collections = ["skraafotos2017", "skraafotos2019", "skraafotos2022"]
+    #collections = ["skraafotos2017", "skraafotos2019", "skraafotos2022"]
+    collections = ["skraafotos2019"]
     directions = ["north", "east", "south", "west"]
     base_url = "https://api.dataforsyningen.dk/rest/skraafoto_api/v1.0/collections/"
     headers = {
@@ -151,8 +154,12 @@ def save_metadata(metadata, path):
             file.write(metadata)
 
 def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
-    """Fetches and saves images for a given address."""
+    """Fetches and saves images along with metadata with polygon for building for a given address."""
     image_tuples = fetch_images(address, token)
+
+    if image_tuples == None:
+        return
+    
     i = 0
     metadata_str = "image_id,x,y,pixel_size\n"
     
@@ -167,5 +174,30 @@ def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
         save_metadata(metadata_str, path)
         i += 1
 
+def get_and_save_processed_images(address, token=DATAFORSYNING_TOKEN, path=None):
+    """Fetches and saves cropped images of the building for a given address."""
+    try: 
+        image_tuples = fetch_images(address, token)
+    except AddressNotFoundError:
+        return
+    
+    i = 0
+    
+    for image, metadata in image_tuples:
+        my_image = Image.open(BytesIO(image)) 
+        jpeg = convert_tiff_to_jpg(my_image)
+
+        image = draw_polygon(jpeg, metadata["points"], metadata["pixel_size"])
+        save_image(image, path, str(i))
+        i += 1
+
+# Load addresses from Excel file
+addresses_df = pd.read_excel('adresser.xlsx')
+addresses = addresses_df['Adresse'] + ', ' + addresses_df['Postnummer'].astype(str) + " " + addresses_df['By']
+
+# Iterate over addresses and call get_and_save_processed_images
+for address in addresses:
+    get_and_save_processed_images(address, DATAFORSYNING_TOKEN, "output2/" + address.replace(" ", ""))
+
 # Example usage
-get_and_save_images("Valdemarsgade 43, 4760 Vordingborg", DATAFORSYNING_TOKEN, "output/valdemarsgade43")
+#get_and_save_processed_images("Valdemarsgade 43, 4760 Vordingborg", DATAFORSYNING_TOKEN, "output2/valdemarsgade43")
