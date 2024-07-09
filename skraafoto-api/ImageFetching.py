@@ -3,6 +3,7 @@ from PIL import Image
 from io import BytesIO
 from datetime import datetime
 from BoundingBoxFetching import get_bounding_box_for_address, get_coordinates_for_address
+from DatafordelerFetching import get_matrikel_from_address
 import os
 from dotenv import load_dotenv
 import pyproj
@@ -11,16 +12,16 @@ load_dotenv()
 
 DATAFORSYNING_TOKEN = os.getenv('DATAFORSYNING_TOKEN') 
 
-def convert_from_wgs84(easting, northing, crs="EPSG:25832"):
-    """Converts coordinates from WGS84 to a given CRS."""
-    transformer = pyproj.Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+def convert_coordinates(easting, northing, crs="EPSG:25832", from_crs="EPSG:4326"):
+    """Converts coordinates from WGS84 (default) to a given CRS."""
+    transformer = pyproj.Transformer.from_crs(from_crs, crs, always_xy=True)
     lon, lat = transformer.transform(easting, northing)
     return (lon, lat)
 
-def get_metadata(item, coords):
-    """Calculates the pixel coordinates of a given address in a given image.
-    Returns a tuple with the pixel coordinates."""
-    # calculations mostly from https://docs.dataforsyningen.dk/#download-og-visning-af-billeder
+def calculate_point_on_image(item, x, y, z=10):
+    """Calculates the pixel coordinates of a given point in a given image.
+    Returns a tuple with the pixel coordinates. x y and z must be in EPSG:25832."""
+
     props = item["properties"]
 
     m11, m12, m13, m21, m22, m23, m31, m32, m33 = props["pers:rotation_matrix"]
@@ -30,21 +31,14 @@ def get_metadata(item, coords):
     ppo_x, ppo_y = props["pers:interior_orientation"]["principal_point_offset"]
     pixel_size = props["pers:interior_orientation"]["pixel_spacing"][0]
     sensor_cols, sensor_rows = props["pers:interior_orientation"]["sensor_array_dimensions"]
-    
 
-    # Calculated values. In pixels. Origo in image lower left.
     f = f_mm / pixel_size
     x0 = sensor_cols * 0.5 + ppo_x / pixel_size
     y0 = sensor_rows * 0.5 + ppo_y / pixel_size
 
-    
-    wgs84_coords = convert_from_wgs84(coords[0], coords[1], "EPSG:"+str(props["pers:crs"]))
-    X, Y = wgs84_coords
-    Z = 10
-
-    dX = (X-Xc)
-    dY = (Y-Yc)
-    dZ = (Z-Zc)
+    dX = (x-Xc)
+    dY = (y-Yc)
+    dZ = (z-Zc)
 
     n = (m31 * dX + m32 * dY + m33 * dZ)
 
@@ -56,12 +50,34 @@ def get_metadata(item, coords):
 
     return (xa, ya_upper_left)
 
+
+def get_metadata(item, coords):
+    """Calculates the pixel coordinates of a given address in a given image.
+    Returns a tuple with the pixel coordinates."""
+    
+    wgs84_coords = convert_coordinates(coords[0], coords[1], "EPSG:"+str(item["properties"]["pers:crs"]))
+    X, Y = wgs84_coords
+    Z = 10
+
+    return calculate_point_on_image(item, X, Y, Z)
+
+def get_matrikel_geometry_on_image(address, item):
+    """Returns the geometry of the matrikel."""
+    matrikel_data = get_matrikel_from_address(address)
+    coordinates = matrikel_data["features"][0]["geometry"]["coordinates"]
+    crs = matrikel_data["features"][0]["geometry"]["crs"]["properties"]["name"]
+
+    epsg_25832_coords = [convert_coordinates(coord[0], coord[1], "EPSG:25832", crs) for coord in coordinates[0]]
+    points_on_image = [calculate_point_on_image(item, coord[0], coord[1]) for coord in epsg_25832_coords]
+
+    return points_on_image
+
 def fetch_images(address, token):
     """Fetches images from the Skraafoto API for a given address.
     Returns a list of tuples with the image data and the pixel coordinates of the address.
     """
     bbox = get_bounding_box_for_address(address)
-    coords = get_coordinates_for_address(address)
+    #coords = get_coordinates_for_address(address)
 
     collections = ["skraafotos2017", "skraafotos2019", "skraafotos2022"]
     directions = ["north", "east", "south", "west"]
@@ -86,7 +102,7 @@ def fetch_images(address, token):
                 if response_json["features"]:
                     image_url = response_json["features"][0]["assets"]["data"]["href"]
 
-                    metadata = get_metadata(response_json["features"][0], coords)
+                    metadata = get_matrikel_geometry_on_image(address, response_json["features"][0])
 
                     image_response = requests.get(image_url, headers=headers)
 
@@ -116,20 +132,22 @@ def save_image(image, path, suffix=""):
 def save_metadata(metadata, path):
     """Saves metadata to a given path."""
     if metadata:
-        with open(path + ".txt", "a") as file:
+        with open(path + ".csv", "a") as file:
             file.write(metadata)
 
 def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
     """Fetches and saves images for a given address."""
     image_tuples = fetch_images(address, token)
     i = 0
-    for image, pixel_coords in image_tuples:
+    for image, metadata in image_tuples:
         my_image = Image.open(BytesIO(image)) 
 
         jpeg = convert_tiff_to_jpg(my_image)
         save_image(jpeg, path, str(i))
-
-        metadata = str(i)+","+str(pixel_coords[0])+","+str(pixel_coords[1])
+        
+        # convert a list of lists to a string with the outer list seperated by commas and the inner lists seperated by new lines
+        metadata = "image_id,x,y\n"
+        metadata += "\n".join([str(i)+","+str(coord_pair[0])+","+str(coord_pair[1]) for coord_pair in metadata])+"\n"
         save_metadata(metadata, path)
         i += 1
 

@@ -14,6 +14,17 @@ def get_coordinates_for_address(address):
     lon, lat = coordinates[0], coordinates[1]
     return (lon, lat)
 
+def get_address_object(address):
+    # Step 1: Geocode the Address
+    geocode_url = f"https://api.dataforsyningen.dk/adresser?q={address}"
+    response = requests.get(geocode_url)
+    data = response.json()
+
+    if not data:
+        return {"error": "Address not found."}
+        
+    return data[0]
+
 def get_bounding_box_for_address(address, buffer=0.0001):
     lon, lat = get_coordinates_for_address(address)
 
