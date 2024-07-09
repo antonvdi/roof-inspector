@@ -5,3 +5,4 @@ folium
 pyproj
 matplotlib
 opencv-python-headless
+xmltodict

@@ -3,20 +3,14 @@ from PIL import Image
 from io import BytesIO
 from datetime import datetime
 from BoundingBoxFetching import get_bounding_box_for_address, get_coordinates_for_address
-from DatafordelerFetching import get_height_from_model, get_matrikel_from_address
+from DatafordelerFetching import get_building_from_address, get_height_from_model, get_matrikel_from_address
 import os
 from dotenv import load_dotenv
-import pyproj
+from Utils import convert_coordinates
 
 load_dotenv()
 
 DATAFORSYNING_TOKEN = os.getenv('DATAFORSYNING_TOKEN') 
-
-def convert_coordinates(easting, northing, crs="EPSG:25832", from_crs="EPSG:4326"):
-    """Converts coordinates from WGS84 (default) to a given CRS."""
-    transformer = pyproj.Transformer.from_crs(from_crs, crs, always_xy=True)
-    lon, lat = transformer.transform(easting, northing)
-    return (lon, lat)
 
 def calculate_point_on_image(item, x, y, z=10):
     """Calculates the pixel coordinates of a given point in a given image.
@@ -63,6 +57,7 @@ def get_metadata(item, coords):
 
 def get_matrikel_geometry_on_image(coords, item):
     """Returns the geometry of the matrikel."""
+    #print(coords)
     
     points_on_image = [calculate_point_on_image(item, coord[0], coord[1], coord[2]) for coord in coords]
 
@@ -78,13 +73,23 @@ def get_matrikel_coordinates(matrikel):
     
     return epsg_25832_coords_with_height
 
+def get_building_coordinates(building):
+    """Returns the coordinates of the building."""
+    polygon_data = building["wfs:FeatureCollection"]["wfs:member"]["gdk60:Bygning"]["gdk60:geometri"]["gml:Polygon"]
+    coordinates = polygon_data["gml:exterior"]["gml:LinearRing"]["gml:posList"]["#text"]
+    coordinates = coordinates.split(" ")
+    coordinates = [(float(coordinates[i]), float(coordinates[i+1]), float(coordinates[i+2])) for i in range(0, len(coordinates), 3)]
+    return coordinates
+
 def fetch_images(address, token):
     """Fetches images from the Skraafoto API for a given address.
     Returns a list of tuples with the image data and the pixel coordinates of the address.
     """
     bbox = get_bounding_box_for_address(address)
-    matrikel_data = get_matrikel_from_address(address)
-    matrikel_coords = get_matrikel_coordinates(matrikel_data)
+    #matrikel_data = get_matrikel_from_address(address)
+    #matrikel_coords = get_matrikel_coordinates(matrikel_data)
+    building = get_building_from_address(address)
+    matrikel_coords = get_building_coordinates(building)
 
     collections = ["skraafotos2017", "skraafotos2019", "skraafotos2022"]
     directions = ["north", "east", "south", "west"]
@@ -163,4 +168,4 @@ def get_and_save_images(address, token=DATAFORSYNING_TOKEN, path=None):
         i += 1
 
 # Example usage
-get_and_save_images("Nyborgvej 69 Odense C", DATAFORSYNING_TOKEN, "output/nyborgvej69")
+get_and_save_images("Valdemarsgade 43, 4760 Vordingborg", DATAFORSYNING_TOKEN, "output/valdemarsgade43")

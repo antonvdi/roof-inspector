@@ -1,11 +1,11 @@
 import numpy as np
 import cv2
-from PIL import Image
 import os
 import csv
 from shapely.geometry import Polygon
+from PIL import Image, ImageDraw
 
-def draw_polygon(image, coords, pixel_size, buffer=1):
+def draw_polygon(image, coords, pixel_size, buffer=0.1):
     # Convert coordinates to a Shapely Polygon
     poly = Polygon(coords)
     
@@ -13,20 +13,22 @@ def draw_polygon(image, coords, pixel_size, buffer=1):
     # Buffer the polygon to expand it by a certain distance
     buffered_poly = poly.buffer(distance=pixel_buffer, resolution=16, cap_style=3, join_style=2, mitre_limit=5.0)
     
-    if buffered_poly.is_empty:
-        return image  # Return original image if buffering results in an empty polygon
-    
     buffered_coords = list(buffered_poly.exterior.coords)
     
-    # Convert buffered coordinates to a format suitable for cv2.polylines
-    buffered_coords_int = np.array(buffered_coords, dtype=np.int32)
+    # Create a mask with the same size as the image
+    mask = Image.new('L', image.size, 0)
+    ImageDraw.Draw(mask).polygon(buffered_coords, outline=1, fill=1)
+    mask = np.array(mask)
     
+    # Apply the mask to the image
     image_array = np.array(image)
+    image_array = cv2.bitwise_and(image_array, image_array, mask=mask)
     
-    # Draw the buffered polygon on the original image
-    cv2.polylines(image_array, [buffered_coords_int], isClosed=True, color=(255, 0, 0), thickness=2)
+    # Crop the image to the bounding box of the buffered polygon
+    minx, miny, maxx, maxy = buffered_poly.bounds
+    cropped_image = image_array[int(miny):int(maxy), int(minx):int(maxx)]
     
-    return Image.fromarray(image_array)
+    return Image.fromarray(cropped_image)
 
 def load_data(base_id):
     image_points = {}
@@ -53,4 +55,4 @@ def load_data(base_id):
         image_with_polygon.show()
 
 # Example usage
-load_data("output/nyborgvej69")
+load_data("output/valdemarsgade43")

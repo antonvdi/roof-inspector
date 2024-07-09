@@ -1,8 +1,9 @@
 # https://services.datafordeler.dk/Matriklen2/Matrikel/2.0.0/rest/SamletFastEjendom?SFEBFEnr=xxxxxxx&username=xxx&password=yyy
-from BoundingBoxFetching import get_address_object
+from BoundingBoxFetching import get_address_object, get_bounding_box_for_address, get_bounding_box_for_address_wgs84
 import os
 from dotenv import load_dotenv
 import requests
+import xmltodict
 
 load_dotenv()
 
@@ -29,6 +30,21 @@ def get_matrikel_from_address(address):
         return {"error": "Matrikel not found."}
 
     return data
+
+def get_building_from_address(address):
+    # Get matrikelnr and ejerlavnr
+    bbox = get_bounding_box_for_address_wgs84(address)
+
+    type = "Bygning"
+    url = f"https://services.datafordeler.dk/GeoDanmarkVektor/GeoDanmark60_NOHIST_GML3/1.0.0/WFS?username={DATAFORDELER_BRUGER}&password={DATAFORDELER_PASSWORD}&service=WFS&request=getfeature&typename={type}&Version=1.1.0&BBOX={bbox}&maxFeatures=1"
+
+    response = requests.get(url)
+    response.raise_for_status()
+
+    if not response.content:
+        return {"error": "Bygning not found."}
+
+    return xmltodict.parse(response.content)
 
 def get_height_from_model(x, y):
     """Returns the height of the model. x and y must be in EPSG:25832."""
